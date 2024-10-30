@@ -5,11 +5,12 @@ using System.Text;
 using System.Threading;
 using UnityEngine;
 
-public class ESP32Receiver : MonoBehaviour
+public class CubeController : MonoBehaviour
 {
+    public GameObject cube;  // Assign your cube GameObject in the Unity Inspector
     private TcpListener tcpListener;
     private Thread tcpListenerThread;
-    public int port = 8080;  // Ensure this matches the ESP32 port
+    public int port = 8080;
 
     private void Start()
     {
@@ -40,14 +41,14 @@ public class ESP32Receiver : MonoBehaviour
                     byte[] buffer = new byte[1024];
                     int bytesRead;
 
-                    // Read incoming data until client disconnects
+                    // Read data until client disconnects
                     while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) != 0)
                     {
                         // Convert received data to string
                         string receivedMessage = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                         Debug.Log("Received from ESP32: " + receivedMessage);
 
-                        // Process data (e.g., move a cube, perform other actions)
+                        // Process data and update the cube
                         ProcessReceivedData(receivedMessage);
                     }
                 }
@@ -65,9 +66,35 @@ public class ESP32Receiver : MonoBehaviour
 
     private void ProcessReceivedData(string data)
     {
-        // Example: Parse the data and use it to move an object
-        // This method can be adapted based on your requirements
-        // Debug.Log("Processing data: " + data);
+        // Split the data into components
+        string[] values = data.Split(',');
+
+        if (values.Length == 6)
+        {
+            try
+            {
+                // Parse accelerometer and gyroscope data
+                float ax = float.Parse(values[0]);
+                float ay = float.Parse(values[1]);
+                float az = float.Parse(values[2]);
+                float gx = float.Parse(values[3]);
+                float gy = float.Parse(values[4]);
+                float gz = float.Parse(values[5]);
+
+                // Map the gyroscope data to cube rotation
+                Vector3 rotation = new Vector3(gx / 100.0f, gy / 100.0f, gz / 100.0f); // Adjust scaling as needed
+                cube.transform.Rotate(rotation);
+
+                // Optionally, you can also use accelerometer data to affect cube position if desired
+                Vector3 position = new Vector3(ax / 1000.0f, ay / 1000.0f, az / 1000.0f); // Adjust scaling as needed
+                cube.transform.position = position;
+
+            }
+            catch (FormatException e)
+            {
+                Debug.LogError("Data parsing error: " + e.Message);
+            }
+        }
     }
 
     private void OnApplicationQuit()
@@ -77,4 +104,3 @@ public class ESP32Receiver : MonoBehaviour
         tcpListenerThread?.Abort();
     }
 }
-
