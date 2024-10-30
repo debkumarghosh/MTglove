@@ -1,0 +1,56 @@
+using UnityEngine;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+
+public class CubeMover : MonoBehaviour
+{
+    private UdpClient udpClient;
+    public int udpPort = 8080;  // Port matching ESP32's transmission
+    public float movementMultiplier = 0.01f;  // Adjusts sensitivity of position changes
+    public float rotationMultiplier = 1.0f;   // Adjusts sensitivity of rotation changes
+
+    void Start()
+    {
+        udpClient = new UdpClient(udpPort);
+        udpClient.BeginReceive(OnDataReceived, udpClient);
+    }
+
+    void OnDataReceived(IAsyncResult result)
+    {
+        IPEndPoint ip = new IPEndPoint(IPAddress.Any, udpPort);
+        byte[] receivedData = udpClient.EndReceive(result, ref ip);
+        string data = Encoding.UTF8.GetString(receivedData);
+        Debug.Log("Received: " + data);
+
+        // Parse the received data
+        string[] values = data.Split(',');
+        if (values.Length == 6)
+        {
+            // Convert received data to float and handle safely
+            if (float.TryParse(values[0], out float ax) &&
+                float.TryParse(values[1], out float ay) &&
+                float.TryParse(values[2], out float az) &&
+                float.TryParse(values[3], out float gx) &&
+                float.TryParse(values[4], out float gy) &&
+                float.TryParse(values[5], out float gz))
+            {
+                // Move the cube based on accelerometer values
+                Vector3 movement = new Vector3(ax, ay, az) * movementMultiplier;
+                transform.position += movement;
+
+                // Rotate the cube based on gyroscope values
+                Vector3 rotation = new Vector3(gx, gy, gz) * rotationMultiplier;
+                transform.Rotate(rotation);
+            }
+        }
+
+        // Begin receiving again
+        udpClient.BeginReceive(OnDataReceived, udpClient);
+    }
+
+    void OnApplicationQuit()
+    {
+        udpClient.Close();
+    }
+}
