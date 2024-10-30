@@ -1,56 +1,80 @@
-using UnityEngine;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
+using UnityEngine;
 
-public class CubeMover : MonoBehaviour
+public class ESP32Receiver : MonoBehaviour
 {
-    private UdpClient udpClient;
-    public int udpPort = 8080;  // Port matching ESP32's transmission
-    public float movementMultiplier = 0.01f;  // Adjusts sensitivity of position changes
-    public float rotationMultiplier = 1.0f;   // Adjusts sensitivity of rotation changes
+    private TcpListener tcpListener;
+    private Thread tcpListenerThread;
+    public int port = 8080;  // Ensure this matches the ESP32 port
 
-    void Start()
+    private void Start()
     {
-        udpClient = new UdpClient(udpPort);
-        udpClient.BeginReceive(OnDataReceived, udpClient);
+        // Start the TCP listener on a separate thread
+        tcpListenerThread = new Thread(ListenForIncomingConnections);
+        tcpListenerThread.IsBackground = true;
+        tcpListenerThread.Start();
     }
 
-    void OnDataReceived(IAsyncResult result)
+    private void ListenForIncomingConnections()
     {
-        IPEndPoint ip = new IPEndPoint(IPAddress.Any, udpPort);
-        byte[] receivedData = udpClient.EndReceive(result, ref ip);
-        string data = Encoding.UTF8.GetString(receivedData);
-        Debug.Log("Received: " + data);
-
-        // Parse the received data
-        string[] values = data.Split(',');
-        if (values.Length == 6)
+        try
         {
-            // Convert received data to float and handle safely
-            if (float.TryParse(values[0], out float ax) &&
-                float.TryParse(values[1], out float ay) &&
-                float.TryParse(values[2], out float az) &&
-                float.TryParse(values[3], out float gx) &&
-                float.TryParse(values[4], out float gy) &&
-                float.TryParse(values[5], out float gz))
-            {
-                // Move the cube based on accelerometer values
-                Vector3 movement = new Vector3(ax, ay, az) * movementMultiplier;
-                transform.position += movement;
+            // Create a TCP listener and start it
+            tcpListener = new TcpListener(IPAddress.Any, port);
+            tcpListener.Start();
+            Debug.Log("Server is listening on port " + port);
 
-                // Rotate the cube based on gyroscope values
-                Vector3 rotation = new Vector3(gx, gy, gz) * rotationMultiplier;
-                transform.Rotate(rotation);
+            // Accept incoming connections in a loop
+            while (true)
+            {
+                using (TcpClient client = tcpListener.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                {
+                    Debug.Log("Connected to ESP32");
+
+                    // Buffer for incoming data
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+
+                    // Read incoming data until client disconnects
+                    while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) != 0)
+                    {
+                        // Convert received data to string
+                        string receivedMessage = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                        Debug.Log("Received from ESP32: " + receivedMessage);
+
+                        // Process data (e.g., move a cube, perform other actions)
+                        ProcessReceivedData(receivedMessage);
+                    }
+                }
             }
         }
-
-        // Begin receiving again
-        udpClient.BeginReceive(OnDataReceived, udpClient);
+        catch (SocketException e)
+        {
+            Debug.LogError("SocketException: " + e);
+        }
+        finally
+        {
+            tcpListener.Stop();
+        }
     }
 
-    void OnApplicationQuit()
+    private void ProcessReceivedData(string data)
     {
-        udpClient.Close();
+        // Example: Parse the data and use it to move an object
+        // This method can be adapted based on your requirements
+        // Debug.Log("Processing data: " + data);
+    }
+
+    private void OnApplicationQuit()
+    {
+        // Stop the listener thread when the application is closed
+        tcpListener?.Stop();
+        tcpListenerThread?.Abort();
     }
 }
+
