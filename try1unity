@@ -1,57 +1,62 @@
 using System;
-using System.IO;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
+using System.IO.Ports;
 using UnityEngine;
 
-public class SimpleServer : MonoBehaviour
+public class BluetoothCubeController : MonoBehaviour
 {
-    private TcpListener server;
-    private TcpClient client;
-    private StreamReader reader;
-    public int port = 8080;
+    SerialPort btPort;
+    public string portName = "COM5";  // Replace with your actual port name
+    public int baudRate = 9600;
+    public GameObject cube;  // Assign your cube in the Unity editor
 
     void Start()
     {
+        btPort = new SerialPort(portName, baudRate);
+        
         try
         {
-            server = new TcpListener(IPAddress.Any, port);
-            server.Start();
-            Debug.Log("Server is listening on port " + port);
-            server.BeginAcceptTcpClient(OnClientConnected, null);
+            btPort.Open();
+            Debug.Log("Bluetooth connection established.");
         }
         catch (Exception e)
         {
-            Debug.LogError("Server Error: " + e.Message);
+            Debug.LogError("Failed to open Bluetooth port: " + e.Message);
         }
-    }
-
-    private void OnClientConnected(IAsyncResult ar)
-    {
-        client = server.EndAcceptTcpClient(ar);
-        reader = new StreamReader(client.GetStream(), Encoding.ASCII);
-        Debug.Log("Client connected.");
-        // Start reading data from client asynchronously
-        server.BeginAcceptTcpClient(OnClientConnected, null);
     }
 
     void Update()
     {
-        if (client != null && client.Connected && reader != null)
+        if (btPort.IsOpen && btPort.BytesToRead > 0)
         {
-            if (client.GetStream().DataAvailable)
+            try
             {
-                string message = reader.ReadLine();
-                Debug.Log("Received: " + message);
+                string data = btPort.ReadLine();
+                Debug.Log("Received: " + data);
+
+                // Parse the data assuming the format "ax,ay,az,gx,gy,gz"
+                string[] values = data.Split(',');
+                if (values.Length == 6)
+                {
+                    float ax = float.Parse(values[0]) / 16384.0f;  // Adjust scale as needed
+                    float ay = float.Parse(values[1]) / 16384.0f;
+                    float az = float.Parse(values[2]) / 16384.0f;
+
+                    // Use accelerometer data to move the cube in Unity
+                    cube.transform.position = new Vector3(ax, ay, az);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("Error reading data: " + e.Message);
             }
         }
     }
 
     private void OnApplicationQuit()
     {
-        reader?.Close();
-        client?.Close();
-        server?.Stop();
+        if (btPort != null && btPort.IsOpen)
+        {
+            btPort.Close();
+        }
     }
 }
