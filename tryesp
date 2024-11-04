@@ -1,0 +1,126 @@
+#include <SoftwareSerial.h>
+#include <SerialCommand.h>
+#include <Wire.h> 
+#include <math.h> 
+
+const int MPU=0x68; // I2C address of the MPU-6050
+int16_t accel_X, accel_Y, accel_Z, Tmp, gyro_X, gyro_Y, gyro_Z; // 16-bit integers
+SerialCommand sCmd;
+
+const int THUMB_PIN = 36; // ESP32 pin for thumb flex sensor
+const int INDEX_PIN = 32; // ESP32 pin for index finger flex sensor
+const int MIDDLE_PIN = 33; // ESP32 pin for middle finger flex sensor
+const int RING_PIN = 34; // ESP32 pin for ring finger flex sensor
+const int PINKY_PIN = 35; // ESP32 pin for pinky finger flex sensor
+
+const float Vin = 5; // Input Voltage of Arduino
+const float R_DIV = 14000; // Measured resistance of R2
+const float NOMINAL_RES = 26000; // resistance when straight
+const float BENT_RES = 60000.0; // resistance at 90 deg
+
+// Acceleration calibration correction
+int accel_Xcal = 1;
+int accel_Ycal = 1;
+int accel_Zcal = 1;
+
+// Gyro calibration correction
+int gyro_Xcal = 0;
+int gyro_Ycal = 0;
+int gyro_Zcal = 0;
+
+void setup() 
+{
+  // Set the flex sensor pins as input
+  pinMode(THUMB_PIN, INPUT);
+  pinMode(INDEX_PIN, INPUT);
+  pinMode(MIDDLE_PIN, INPUT);
+  pinMode(RING_PIN, INPUT);
+  pinMode(PINKY_PIN, INPUT);
+
+  // begin serial communication
+  Serial.begin(9600);
+  Wire.begin(21, 22); // Initialize I2C with SDA on GPIO 21 and SCL on GPIO 22
+  calibrate();
+}
+
+void loop() 
+{
+  // Read the output of each flex sensor
+  flexSensor(THUMB_PIN, "Thumb", "Left");
+  flexSensor(INDEX_PIN, "Index", "Left");
+  flexSensor(RING_PIN, "Ring", "Left");
+  flexSensor(MIDDLE_PIN, "Middle", "Left");
+  flexSensor(PINKY_PIN, "Pinky", "Left");
+
+  // Read accel and gyro data
+  accel_and_gyro("Left");
+}
+
+// Read the output voltage from specified pin
+// Calculate the resistance of the flex sensor and determine the angle bent
+// Print the angle bent through the serial port
+void flexSensor(int PIN, String finger, String hand){
+  int voltage_read = analogRead(PIN);
+  float Vout = voltage_read * Vin / 1023.0;
+  float flex_resistance = R_DIV * (Vin / Vout - 1.0);
+
+  // Linearly map the flex resistance measured to its corresponding angle
+  float angle = map(flex_resistance, NOMINAL_RES, BENT_RES, 0, 90.0);
+  
+  // Angle correction for the thumb                 
+  if (finger == "Thumb") {
+    angle = angle - 50;
+  }
+  // Print to serial communication with the hand and finger identifiers
+  Serial.println(hand + ":" + finger + ":" + String(angle));
+}
+
+// Read the accel and gyro data
+void accel_and_gyro(String hand){
+  Wire.beginTransmission(MPU); // Start transmission
+  Wire.write(0x3B); // First register
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU, 14, true); // Request the next 14 registers
+
+  // Read accel data
+  accel_X = Wire.read() << 8 | Wire.read() + accel_Xcal; 
+  accel_Y = Wire.read() << 8 | Wire.read() + accel_Ycal; 
+  accel_Z = Wire.read() << 8 | Wire.read() + accel_Zcal; 
+
+  // Read gyroscope data
+  gyro_X = Wire.read() << 8 | Wire.read() + gyro_Xcal; 
+  gyro_Y = Wire.read() << 8 | Wire.read() + gyro_Ycal; 
+  gyro_Z = Wire.read() << 8 | Wire.read() + gyro_Zcal;  
+  
+  Serial.println(hand + ":RotateY:" + String(gyro_Y));
+  Serial.println(hand + ":RotateZ:" + String(gyro_Z));
+}
+
+// Calibrate accel and gyro from the initial readings of the data
+// Ensure that sensors are stationary at the start for better accuracy
+void calibrate(){
+    Wire.beginTransmission(MPU); // Start transmission
+    Wire.write(0x3B); // First register
+    Wire.endTransmission(false);
+    Wire.requestFrom(MPU, 14, true); // Request the next 14 registers
+
+    // Read initial accelerometer data
+    accel_X = Wire.read() << 8 | Wire.read();  
+    accel_Y = Wire.read() << 8 | Wire.read(); 
+    accel_Z = Wire.read() << 8 | Wire.read();
+  
+    // Read initial gyroscope data
+    gyro_X = Wire.read() << 8 | Wire.read();
+    gyro_Y = Wire.read() << 8 | Wire.read(); 
+    gyro_Z = Wire.read() << 8 | Wire.read();
+
+    // Accel correction
+    accel_Xcal = -accel_X - 15000;
+    accel_Ycal = -accel_Y;
+    accel_Zcal = -accel_Z;
+    
+    // Gyro correction
+    gyro_Xcal = -gyro_X;
+    gyro_Ycal = -gyro_Y - 750;
+    gyro_Zcal = -gyro_Z;
+}  
